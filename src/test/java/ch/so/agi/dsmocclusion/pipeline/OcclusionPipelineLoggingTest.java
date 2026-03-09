@@ -16,7 +16,9 @@ import org.geotools.referencing.CRS;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import ch.so.agi.dsmocclusion.config.AlgorithmMode;
 import ch.so.agi.dsmocclusion.config.BBox;
+import ch.so.agi.dsmocclusion.config.HorizonParameters;
 import ch.so.agi.dsmocclusion.config.LightingParameters;
 import ch.so.agi.dsmocclusion.config.OutputMode;
 import ch.so.agi.dsmocclusion.config.RunConfig;
@@ -59,6 +61,7 @@ class OcclusionPipelineLoggingTest {
         RunConfig runConfig = new RunConfig(
                 "blocking-test",
                 new BBox(0.0, 0.0, 2.0, 2.0),
+                AlgorithmMode.EXACT,
                 OutputMode.TILE_FILES,
                 tempDir.resolve("unused.tif"),
                 tempDir.resolve("tiles"),
@@ -71,7 +74,8 @@ class OcclusionPipelineLoggingTest {
                 false,
                 false,
                 1.0,
-                new LightingParameters(0, 4, 1.0, 0.0, 1.0, 0.0, 0.0, 45.0, 11.4, 1.0));
+                new LightingParameters(0, 4, 1.0, 0.0, 1.0, 0.0, 0.0, 45.0, 11.4, 1.0),
+                HorizonParameters.defaults());
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {

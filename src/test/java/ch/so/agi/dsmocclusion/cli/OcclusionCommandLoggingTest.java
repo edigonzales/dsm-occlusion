@@ -97,6 +97,54 @@ class OcclusionCommandLoggingTest {
         assertThat(output.stdout()).contains("--verbose");
     }
 
+    @Test
+    void horizonModeWarnsWhenRayCountIsExplicitlySet() throws Exception {
+        Path raster = createLocalRaster("horizon-warning.tif");
+        CapturedCommandOutput output = new CapturedCommandOutput();
+        CommandLine commandLine = new CommandLine(new OcclusionCommand(fixedClock()));
+        commandLine.setOut(output.stdoutWriter());
+        commandLine.setErr(output.stderrWriter());
+
+        int exitCode = commandLine.execute(
+                "-i",
+                raster.toString(),
+                "--bbox",
+                "0,0,2,2",
+                "--outputDir",
+                tempDir.resolve("horizon-tiles").toString(),
+                "--algorithm",
+                "horizon",
+                "-r",
+                "8",
+                "--horizonDirections",
+                "8");
+
+        assertThat(exitCode).isZero();
+        assertThat(output.stderr()).contains("Ignoring -r because --algorithm=horizon does not use rays.");
+    }
+
+    @Test
+    void horizonModeRejectsBounceConfiguration() throws Exception {
+        Path raster = createLocalRaster("horizon-bounce-error.tif");
+        CapturedCommandOutput output = new CapturedCommandOutput();
+        CommandLine commandLine = new CommandLine(new OcclusionCommand(fixedClock()));
+        commandLine.setOut(output.stdoutWriter());
+        commandLine.setErr(output.stderrWriter());
+
+        int exitCode = commandLine.execute(
+                "-i",
+                raster.toString(),
+                "--bbox",
+                "0,0,2,2",
+                "--algorithm",
+                "horizon",
+                "-B",
+                "1");
+
+        assertThat(exitCode).isEqualTo(1);
+        assertThat(output.stderr()).contains("--algorithm=horizon supports only maxBounces=0");
+    }
+
     private Path createLocalRaster(String filename) throws Exception {
         return TestRasterFactory.createRaster(
                 tempDir.resolve(filename),

@@ -26,7 +26,9 @@ Das Projekt ist in diese Pakete gegliedert:
 5. Für jedes Tile:
    - gepuffertes Fenster lesen
    - nur den Kernbereich auf Daten prüfen
-   - bei Daten: BVH aus gepufferten Säulen erzeugen und Kernpixel berechnen
+   - bei Daten:
+     - `exact`: BVH aus gepufferten Säulen erzeugen und Kernpixel per Raytracing berechnen
+     - `horizon`: lokalen DEM-Pyramidenaufbau erzeugen und Kernpixel per Richtungs-Horizontprofil berechnen
    - Ergebnis schreiben
 
 ## Logging
@@ -51,6 +53,7 @@ Das Projekt ist in diese Pakete gegliedert:
 - Die BVH wird pro gepuffertem Tile aufgebaut.
 - Berechnet werden nur gültige Kernpixel, nicht der gesamte Buffer.
 - Die Sampling-Strategie ist deterministisch und an Tile-ID, Pixelindex und Rayindex gebunden.
+- Der Horizon-Mode verwendet statt BVH/Rays ein diskretes Richtungsprofil mit mehrstufiger Distanzabtastung und einer bias-kompatiblen Sichtbarkeitsfunktion.
 
 ## Einzeldatei-Modus
 
@@ -65,6 +68,7 @@ Das Projekt ist in diese Pakete gegliedert:
 - Keine Multi-Band-Inputs
 - Keine GPU-Implementierung
 - Parallelisierung erfolgt auf Tile-Ebene; innerhalb eines einzelnen Tiles wird derzeit nicht weiter aufgesplittet
+- `--algorithm horizon` approximiert nur den No-Bounce-Fall (`maxBounces=0`)
 
 ## Tests
 

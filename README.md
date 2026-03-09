@@ -11,6 +11,7 @@ Java-17-Implementierung eines CPU-basierten DSM-Occlusion-Werkzeugs nach dem Vor
 - Deterministische Zufallszahlen mit festem Seed.
 - Tiled-Output ist Standard; Einzel-GeoTIFF ist optional.
 - Strukturierte Laufzeit-Logs mit optionalem `--verbose` für Detailmeldungen.
+- Zwei Algorithmen: exakter CPU-Raytracer (`--algorithm exact`) und horizonbasierte Approximation (`--algorithm horizon`).
 
 ## Voraussetzungen
 
@@ -69,6 +70,7 @@ Resume ab Tile 10:
 | --- | --- | --- |
 | `-i` | – | Eingabe-URL oder lokaler Pfad |
 | `--bbox` | – | BBOX im Raster-CRS: `minX,minY,maxX,maxY` |
+| `--algorithm` | `exact` | `exact` für Raytracing, `horizon` für schnelle Horizont-Approximation |
 | `-o` | `output.tif` | Ausgabe im `--singleFile`-Modus |
 | `--outputDir` | `output_tiles` | Zielverzeichnis für Tiled-Output |
 | `-r` | `1024` | Rays pro Pixel |
@@ -84,6 +86,8 @@ Resume ab Tile 10:
 | `--sunAzimuth` | `0` | Azimut im Uhrzeigersinn ab Norden |
 | `--sunElevation` | `45` | Sonnenhöhe über dem Horizont |
 | `--sunAngularDiam` | `11.4` | Winkeldurchmesser der Sonne |
+| `--horizonDirections` | `32` | Nur für `--algorithm horizon`: Anzahl Azimut-Richtungen |
+| `--horizonRadiusMeters` | – | Nur für `--algorithm horizon`: maximale Horizont-Suchdistanz in Metern |
 | `--singleFile` | `false` | Schreibt ein GeoTIFF für die gesamte angefragte BBOX |
 | `--tiled` | `false` | Kompatibilitätsalias; tiled ist bereits Default |
 | `--startTile` | `0` | Überspringt frühere Tiles |
@@ -100,12 +104,15 @@ Resume ab Tile 10:
 - Wenn nur der Buffer Daten enthält, wird das Tile im Tiled-Modus nicht geschrieben; im Einzeldatei-Modus bleibt der Bereich NoData.
 - `sunElevation` folgt der üblichen Semantik "Grad über dem Horizont".
 - `ambientPower` wird additiv auf das gemittelte Ergebnis pro gültigem Pixel aufgeschlagen.
+- `--algorithm horizon` unterstützt nur `maxBounces=0`; ein explizites `-r` wird in diesem Modus ignoriert.
+- Wenn `--horizonRadiusMeters` gesetzt ist, wird der effektive Tile-Buffer automatisch auf mindestens diese Distanz vergrössert.
 
 ## Performance-Hinweise
 
 - CPU-only-Läufe mit `-r 1024` und `-t 2000` können sehr langsam sein.
 - Für produktive CPU-Läufe sind meist kleinere Werte sinnvoll, zum Beispiel `-r 64..256` und `-t 256..1024`.
 - Für grosse BBOXen sollte der Tiled-Modus bevorzugt werden.
+- Für schnelle Vorschau- oder Näherungsläufe eignet sich `--algorithm horizon`, insbesondere mit `--horizonDirections 16..32`.
 
 ## Tests
 

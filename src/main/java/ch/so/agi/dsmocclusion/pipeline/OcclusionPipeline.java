@@ -12,6 +12,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
+import ch.so.agi.dsmocclusion.config.AlgorithmMode;
 import ch.so.agi.dsmocclusion.config.OutputMode;
 import ch.so.agi.dsmocclusion.config.RunConfig;
 import ch.so.agi.dsmocclusion.core.TileComputationResult;
@@ -55,14 +56,15 @@ public final class OcclusionPipeline {
     public void run(RasterSource rasterSource, RunConfig runConfig) throws IOException {
         long runStartNanos = System.nanoTime();
         RasterMetadata metadata = rasterSource.metadata();
-        int bufferPixelsX = resolveBufferPixelsX(runConfig, metadata);
-        int bufferPixelsY = resolveBufferPixelsY(runConfig, metadata);
+        int bufferPixelsX = resolveEffectiveBufferPixelsX(runConfig, metadata);
+        int bufferPixelsY = resolveEffectiveBufferPixelsY(runConfig, metadata);
         TilePlan tilePlan = tilePlanner.plan(metadata, runConfig.bbox(), runConfig.tileSizePixels(), bufferPixelsX, bufferPixelsY);
         int submitted = countSubmittedTiles(tilePlan, runConfig.startTile());
         ExecutionLayout executionLayout = resolveExecutionLayout(runConfig.threads(), submitted);
 
         logger.info(
-                "Resolved config: threads=%d, tileWorkers=%d, tileThreads=%d, tileSize=%d px, buffer=%d x %d px (~%.3f x %.3f m), rays=%d, exaggeration=%.3f, startTile=%d",
+                "Resolved config: algorithm=%s, threads=%d, tileWorkers=%d, tileThreads=%d, tileSize=%d px, buffer=%d x %d px (~%.3f x %.3f m), rays=%d, horizonDirections=%d, horizonRadius=%s, exaggeration=%.3f, startTile=%d",
+                runConfig.algorithmMode(),
                 runConfig.threads(),
                 executionLayout.tileWorkers(),
                 executionLayout.tileComputeThreads(),
@@ -72,6 +74,8 @@ public final class OcclusionPipeline {
                 bufferPixelsX * metadata.resolutionX(),
                 bufferPixelsY * metadata.resolutionY(),
                 runConfig.lightingParameters().raysPerPixel(),
+                runConfig.horizonParameters().directions(),
+                formatHorizonRadius(runConfig),
                 runConfig.exaggeration(),
                 runConfig.startTile());
         logger.info(
@@ -206,8 +210,7 @@ public final class OcclusionPipeline {
                     tileRequest,
                     metadata,
                     bufferedValues,
-                    runConfig.lightingParameters(),
-                    runConfig.exaggeration(),
+                    runConfig,
                     tileComputeThreads);
             long computeDurationNanos = System.nanoTime() - computeStartNanos;
             if (result.skipped()) {
@@ -242,7 +245,23 @@ public final class OcclusionPipeline {
         return submitted;
     }
 
-    private int resolveBufferPixelsX(RunConfig runConfig, RasterMetadata metadata) {
+    private int resolveEffectiveBufferPixelsX(RunConfig runConfig, RasterMetadata metadata) {
+        int resolved = resolveBaseBufferPixelsX(runConfig, metadata);
+        if (runConfig.algorithmMode() == AlgorithmMode.HORIZON && runConfig.horizonParameters().radiusMeters() != null) {
+            resolved = Math.max(resolved, metadata.bufferPixelsX(runConfig.horizonParameters().radiusMeters()));
+        }
+        return resolved;
+    }
+
+    private int resolveEffectiveBufferPixelsY(RunConfig runConfig, RasterMetadata metadata) {
+        int resolved = resolveBaseBufferPixelsY(runConfig, metadata);
+        if (runConfig.algorithmMode() == AlgorithmMode.HORIZON && runConfig.horizonParameters().radiusMeters() != null) {
+            resolved = Math.max(resolved, metadata.bufferPixelsY(runConfig.horizonParameters().radiusMeters()));
+        }
+        return resolved;
+    }
+
+    private int resolveBaseBufferPixelsX(RunConfig runConfig, RasterMetadata metadata) {
         if (runConfig.bufferPixelsOverride() != null) {
             return runConfig.bufferPixelsOverride();
         }
@@ -252,7 +271,7 @@ public final class OcclusionPipeline {
         return runConfig.defaultBufferPixels();
     }
 
-    private int resolveBufferPixelsY(RunConfig runConfig, RasterMetadata metadata) {
+    private int resolveBaseBufferPixelsY(RunConfig runConfig, RasterMetadata metadata) {
         if (runConfig.bufferPixelsOverride() != null) {
             return runConfig.bufferPixelsOverride();
         }
@@ -260,6 +279,16 @@ public final class OcclusionPipeline {
             return metadata.bufferPixelsY(runConfig.bufferMetersOverride());
         }
         return runConfig.defaultBufferPixels();
+    }
+
+    private String formatHorizonRadius(RunConfig runConfig) {
+        if (runConfig.algorithmMode() != AlgorithmMode.HORIZON) {
+            return "-";
+        }
+        if (runConfig.horizonParameters().radiusMeters() == null) {
+            return "buffer";
+        }
+        return String.format(Locale.ROOT, "%.3f m", runConfig.horizonParameters().radiusMeters());
     }
 
     private IOException unwrap(ExecutionException executionException) {

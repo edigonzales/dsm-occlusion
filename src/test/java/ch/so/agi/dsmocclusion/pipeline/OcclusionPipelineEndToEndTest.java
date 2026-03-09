@@ -139,4 +139,65 @@ class OcclusionPipelineEndToEndTest {
                 .doesNotContain("00000000_tile_00000_00000.tif")
                 .contains("00000001_tile_00001_00000.tif", "00000002_tile_00000_00001.tif", "00000003_tile_00001_00001.tif");
     }
+
+    @Test
+    void horizonSingleFileOutputIsStableAcrossTileSizes() throws Exception {
+        Path raster = TestRasterFactory.createRaster(
+                tempDir.resolve("horizon-source.tif"),
+                new float[] {
+                        0.0f, 1.0f, 2.0f, 1.0f, 0.0f, 0.0f,
+                        0.0f, 2.0f, 3.0f, 2.0f, 0.0f, 0.0f,
+                        1.0f, 3.0f, 6.0f, 3.0f, 1.0f, 0.0f,
+                        0.0f, 2.0f, 3.0f, 2.0f, 0.0f, 0.0f,
+                        0.0f, 1.0f, 2.0f, 1.0f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+                },
+                6,
+                6,
+                0.0,
+                0.0,
+                1.0,
+                "EPSG:2056",
+                -9999.0);
+
+        Path smallTile = tempDir.resolve("horizon-small.tif");
+        Path largeTile = tempDir.resolve("horizon-large.tif");
+
+        int smallExit = new CommandLine(new OcclusionCommand()).execute(
+                "-i",
+                raster.toString(),
+                "--bbox",
+                "0,0,6,6",
+                "--singleFile",
+                "-o",
+                smallTile.toString(),
+                "--algorithm",
+                "horizon",
+                "--horizonDirections",
+                "8",
+                "--horizonRadiusMeters",
+                "2",
+                "-t",
+                "2");
+        int largeExit = new CommandLine(new OcclusionCommand()).execute(
+                "-i",
+                raster.toString(),
+                "--bbox",
+                "0,0,6,6",
+                "--singleFile",
+                "-o",
+                largeTile.toString(),
+                "--algorithm",
+                "horizon",
+                "--horizonDirections",
+                "8",
+                "--horizonRadiusMeters",
+                "2",
+                "-t",
+                "6");
+
+        assertThat(smallExit).isZero();
+        assertThat(largeExit).isZero();
+        assertThat(TestRasterFactory.readRaster(smallTile)).containsExactly(TestRasterFactory.readRaster(largeTile));
+    }
 }

@@ -5,7 +5,9 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.util.concurrent.Callable;
 
+import ch.so.agi.dsmocclusion.config.AlgorithmMode;
 import ch.so.agi.dsmocclusion.config.BBox;
+import ch.so.agi.dsmocclusion.config.HorizonParameters;
 import ch.so.agi.dsmocclusion.config.LightingParameters;
 import ch.so.agi.dsmocclusion.config.OutputMode;
 import ch.so.agi.dsmocclusion.config.RunConfig;
@@ -15,6 +17,7 @@ import ch.so.agi.dsmocclusion.util.ConsoleLogger;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.ITypeConverter;
 import picocli.CommandLine.Option;
+import picocli.CommandLine.ParseResult;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Model.CommandSpec;
 
@@ -40,6 +43,9 @@ public final class OcclusionCommand implements Callable<Integer> {
 
     @Option(names = "--bbox", required = true, converter = BBoxConverter.class, description = "BBOX in raster CRS: minX,minY,maxX,maxY")
     private BBox bbox;
+
+    @Option(names = "--algorithm", defaultValue = "exact", converter = AlgorithmModeConverter.class, description = "Computation algorithm: exact or horizon.")
+    private AlgorithmMode algorithmMode;
 
     @Option(names = "-o", defaultValue = "output.tif", description = "Single-file output path.")
     private Path outputFile;
@@ -86,6 +92,12 @@ public final class OcclusionCommand implements Callable<Integer> {
     @Option(names = "--sunAngularDiam", defaultValue = "11.4", description = "Sun angular diameter in degrees.")
     private double sunAngularDiameter;
 
+    @Option(names = "--horizonDirections", defaultValue = "32", description = "Azimuth directions used by --algorithm=horizon.")
+    private int horizonDirections;
+
+    @Option(names = "--horizonRadiusMeters", description = "Maximum horizon search distance in metres for --algorithm=horizon.")
+    private Double horizonRadiusMeters;
+
     @Option(names = "--tiled", description = "Compatibility alias; tiled mode is already the default.")
     private boolean tiled;
 
@@ -130,6 +142,7 @@ public final class OcclusionCommand implements Callable<Integer> {
         RunConfig runConfig = new RunConfig(
                 inputLocation,
                 bbox,
+                algorithmMode,
                 singleFile ? OutputMode.SINGLE_FILE : OutputMode.TILE_FILES,
                 outputFile,
                 outputDirectory,
@@ -142,12 +155,14 @@ public final class OcclusionCommand implements Callable<Integer> {
                 verbose,
                 printInfo,
                 exaggeration,
-                lightingParameters);
+                lightingParameters,
+                new HorizonParameters(horizonDirections, horizonRadiusMeters));
 
         logger.info(
-                "Run start: input=%s, bbox=%s, outputMode=%s, outputTarget=%s",
+                "Run start: input=%s, bbox=%s, algorithm=%s, outputMode=%s, outputTarget=%s",
                 runConfig.inputLocation(),
                 runConfig.bbox(),
+                runConfig.algorithmMode(),
                 runConfig.outputMode(),
                 runConfig.outputMode() == OutputMode.SINGLE_FILE ? runConfig.outputFile() : runConfig.outputDirectory());
 
@@ -176,12 +191,35 @@ public final class OcclusionCommand implements Callable<Integer> {
         if (!singleFile && outputFile != null && !"output.tif".equals(outputFile.toString())) {
             logger.warn("Ignoring -o because tiled mode is the default.");
         }
+        ParseResult parseResult = commandSpec.commandLine().getParseResult();
+        if (algorithmMode == AlgorithmMode.HORIZON) {
+            if (maxBounces > 0) {
+                throw new IllegalArgumentException("--algorithm=horizon supports only maxBounces=0.");
+            }
+            if (parseResult != null && parseResult.hasMatchedOption("-r")) {
+                logger.warn("Ignoring -r because --algorithm=horizon does not use rays.");
+            }
+        } else if (parseResult != null) {
+            if (parseResult.hasMatchedOption("--horizonDirections")) {
+                logger.warn("Ignoring --horizonDirections because --algorithm=exact is active.");
+            }
+            if (parseResult.hasMatchedOption("--horizonRadiusMeters")) {
+                logger.warn("Ignoring --horizonRadiusMeters because --algorithm=exact is active.");
+            }
+        }
     }
 
     public static final class BBoxConverter implements ITypeConverter<BBox> {
         @Override
         public BBox convert(String value) {
             return BBox.parse(value);
+        }
+    }
+
+    public static final class AlgorithmModeConverter implements ITypeConverter<AlgorithmMode> {
+        @Override
+        public AlgorithmMode convert(String value) {
+            return AlgorithmMode.fromCliValue(value);
         }
     }
 }

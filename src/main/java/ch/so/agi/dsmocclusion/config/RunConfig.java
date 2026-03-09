@@ -5,6 +5,7 @@ import java.nio.file.Path;
 public record RunConfig(
         String inputLocation,
         BBox bbox,
+        AlgorithmMode algorithmMode,
         OutputMode outputMode,
         Path outputFile,
         Path outputDirectory,
@@ -17,7 +18,8 @@ public record RunConfig(
         boolean verbose,
         boolean printInfo,
         double exaggeration,
-        LightingParameters lightingParameters) {
+        LightingParameters lightingParameters,
+        HorizonParameters horizonParameters) {
 
     public RunConfig {
         if (inputLocation == null || inputLocation.isBlank()) {
@@ -25,6 +27,9 @@ public record RunConfig(
         }
         if (bbox == null) {
             throw new IllegalArgumentException("bbox is required");
+        }
+        if (algorithmMode == null) {
+            throw new IllegalArgumentException("algorithmMode is required");
         }
         if (outputMode == null) {
             throw new IllegalArgumentException("outputMode is required");
@@ -50,11 +55,17 @@ public record RunConfig(
         if (lightingParameters == null) {
             throw new IllegalArgumentException("lightingParameters is required");
         }
+        if (horizonParameters == null) {
+            throw new IllegalArgumentException("horizonParameters is required");
+        }
         if (outputByte && outputMode != OutputMode.TILE_FILES) {
             throw new IllegalArgumentException("--outputByte is only supported in tiled mode");
         }
         if (bufferPixelsOverride != null && bufferMetersOverride != null) {
             throw new IllegalArgumentException("Use either -b or --bufferMeters, not both");
+        }
+        if (algorithmMode == AlgorithmMode.HORIZON && lightingParameters.maxBounces() > 0) {
+            throw new IllegalArgumentException("--algorithm=horizon supports only maxBounces=0");
         }
     }
 
