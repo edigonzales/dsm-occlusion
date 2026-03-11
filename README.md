@@ -43,16 +43,16 @@ Standardmodus: tiled output in `output_tiles`.
 ```
 
 ```bash
-./gradlew run --args="\
+nohup ./gradlew run --args="\
   -i https://dbeaver.sogeo.services/ch.swisstopo.lidar_2023.dsm.tif \
   --bbox 2592000,1213000,2645000,1262000 \
   -t 2000 \
   --bufferMeters 100 \
   -r 1024 \
-  --threads 2 \
+  --threads 12 \
   --algorithm horizon \
   --horizonDirections 180 \
-  --verbose"
+  --verbose" &
 ```
 
 Einzeldatei:
