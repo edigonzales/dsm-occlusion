@@ -67,7 +67,8 @@ Das Projekt ist in diese Pakete gegliedert:
 - Keine rotierte/sheared Rastergeometrie
 - Keine Multi-Band-Inputs
 - Keine GPU-Implementierung
-- Parallelisierung erfolgt auf Tile-Ebene; innerhalb eines einzelnen Tiles wird derzeit nicht weiter aufgesplittet
+- `exact` splittet Threads zwischen parallelen Tiles und paralleler Zeilenberechnung innerhalb eines Tiles auf
+- `horizon` parallelisiert nur über Tiles; die Berechnung innerhalb eines Tiles bleibt einstufig
 - `--algorithm horizon` approximiert nur den No-Bounce-Fall (`maxBounces=0`)
 
 ## Tests

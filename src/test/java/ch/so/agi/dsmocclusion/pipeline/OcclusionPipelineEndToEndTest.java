@@ -200,4 +200,69 @@ class OcclusionPipelineEndToEndTest {
         assertThat(largeExit).isZero();
         assertThat(TestRasterFactory.readRaster(smallTile)).containsExactly(TestRasterFactory.readRaster(largeTile));
     }
+
+    @Test
+    void horizonSingleFileOutputIsStableAcrossThreadCounts() throws Exception {
+        Path raster = TestRasterFactory.createRaster(
+                tempDir.resolve("horizon-threads-source.tif"),
+                new float[] {
+                        0.0f, 1.0f, 2.0f, 1.0f, 0.0f, 0.0f,
+                        0.0f, 2.0f, 3.0f, 2.0f, 0.0f, 0.0f,
+                        1.0f, 3.0f, 6.0f, 3.0f, 1.0f, 0.0f,
+                        0.0f, 2.0f, 3.0f, 2.0f, 0.0f, 0.0f,
+                        0.0f, 1.0f, 2.0f, 1.0f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+                },
+                6,
+                6,
+                0.0,
+                0.0,
+                1.0,
+                "EPSG:2056",
+                -9999.0);
+
+        Path singleThread = tempDir.resolve("horizon-single-thread.tif");
+        Path multiThread = tempDir.resolve("horizon-multi-thread.tif");
+
+        int singleExit = new CommandLine(new OcclusionCommand()).execute(
+                "-i",
+                raster.toString(),
+                "--bbox",
+                "0,0,6,6",
+                "--singleFile",
+                "-o",
+                singleThread.toString(),
+                "--algorithm",
+                "horizon",
+                "--horizonDirections",
+                "8",
+                "--horizonRadiusMeters",
+                "2",
+                "-t",
+                "2",
+                "--threads",
+                "1");
+        int multiExit = new CommandLine(new OcclusionCommand()).execute(
+                "-i",
+                raster.toString(),
+                "--bbox",
+                "0,0,6,6",
+                "--singleFile",
+                "-o",
+                multiThread.toString(),
+                "--algorithm",
+                "horizon",
+                "--horizonDirections",
+                "8",
+                "--horizonRadiusMeters",
+                "2",
+                "-t",
+                "2",
+                "--threads",
+                "4");
+
+        assertThat(singleExit).isZero();
+        assertThat(multiExit).isZero();
+        assertThat(TestRasterFactory.readRaster(singleThread)).containsExactly(TestRasterFactory.readRaster(multiThread));
+    }
 }

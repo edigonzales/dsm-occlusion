@@ -92,7 +92,7 @@ Resume ab Tile 10:
 | `--tiled` | `false` | Kompatibilitätsalias; tiled ist bereits Default |
 | `--startTile` | `0` | Überspringt frühere Tiles |
 | `--outputByte` | `false` | Nur für tiled: clamp `[0,1]` nach Byte `[0,255]` |
-| `--threads` | `availableProcessors()` | Anzahl paralleler Tile-Worker |
+| `--threads` | `availableProcessors()` | Gesamt-Threadbudget; bei `exact` auf Tile-Worker und Tile-Compute aufgeteilt, bei `horizon` Anzahl paralleler Tiles |
 | `--info` | `false` | Druckt Raster-Metadaten vor der Verarbeitung |
 | `--verbose` | `false` | Druckt zusätzliche Detail-Logs für Read/Trace/Write |
 
@@ -106,6 +106,7 @@ Resume ab Tile 10:
 - `ambientPower` wird additiv auf das gemittelte Ergebnis pro gültigem Pixel aufgeschlagen.
 - `--algorithm horizon` unterstützt nur `maxBounces=0`; ein explizites `-r` wird in diesem Modus ignoriert.
 - Wenn `--horizonRadiusMeters` gesetzt ist, wird der effektive Tile-Buffer automatisch auf mindestens diese Distanz vergrössert.
+- Im `horizon`-Modus wird `--threads` direkt als Anzahl gleichzeitig berechneter Tiles verwendet; innerhalb eines Tiles bleibt die Berechnung einstufig.
 
 ## Performance-Hinweise
 

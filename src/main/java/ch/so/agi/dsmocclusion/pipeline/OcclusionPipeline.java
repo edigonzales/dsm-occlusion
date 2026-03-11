@@ -60,7 +60,7 @@ public final class OcclusionPipeline {
         int bufferPixelsY = resolveEffectiveBufferPixelsY(runConfig, metadata);
         TilePlan tilePlan = tilePlanner.plan(metadata, runConfig.bbox(), runConfig.tileSizePixels(), bufferPixelsX, bufferPixelsY);
         int submitted = countSubmittedTiles(tilePlan, runConfig.startTile());
-        ExecutionLayout executionLayout = resolveExecutionLayout(runConfig.threads(), submitted);
+        ExecutionLayout executionLayout = resolveExecutionLayout(runConfig, submitted);
 
         logger.info(
                 "Resolved config: algorithm=%s, threads=%d, tileWorkers=%d, tileThreads=%d, tileSize=%d px, buffer=%d x %d px (~%.3f x %.3f m), rays=%d, horizonDirections=%d, horizonRadius=%s, exaggeration=%.3f, startTile=%d",
@@ -330,7 +330,11 @@ public final class OcclusionPipeline {
         return String.format(Locale.ROOT, "%02d:%02d", minutes, seconds);
     }
 
-    private ExecutionLayout resolveExecutionLayout(int totalThreads, int submittedTiles) {
+    private ExecutionLayout resolveExecutionLayout(RunConfig runConfig, int submittedTiles) {
+        int totalThreads = runConfig.threads();
+        if (runConfig.algorithmMode() == AlgorithmMode.HORIZON) {
+            return new ExecutionLayout(Math.max(1, Math.min(submittedTiles, totalThreads)), 1);
+        }
         if (submittedTiles <= 1 || totalThreads <= 4) {
             return new ExecutionLayout(1, totalThreads);
         }
