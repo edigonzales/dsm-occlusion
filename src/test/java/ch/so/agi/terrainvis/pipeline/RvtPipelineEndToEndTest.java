@@ -119,7 +119,9 @@ class RvtPipelineEndToEndTest {
                     "--output",
                     output.toString(),
                     "--tile-size",
-                    "3");
+                    "3",
+                    "--threads",
+                    "2");
 
             assertThat(exitCode).isZero();
             assertThat(server.rangeRequests()).isGreaterThan(0);
@@ -127,6 +129,31 @@ class RvtPipelineEndToEndTest {
 
         List<Path> tiles = Files.list(output).toList();
         assertThat(tiles).isNotEmpty();
+    }
+
+    @Test
+    void svfTileFilesWorksWithTwoThreads() throws Exception {
+        Path raster = createRaster("parallel-svf.tif");
+        Path output = tempDir.resolve("parallel-svf-tiles");
+
+        int exitCode = new CommandLine(new MainCommand()).execute(
+                "rvt",
+                "svf",
+                "--input",
+                raster.toString(),
+                "--bbox",
+                "0,0,6,6",
+                "--output-mode",
+                "tile-files",
+                "--output",
+                output.toString(),
+                "--tile-size",
+                "3",
+                "--threads",
+                "2");
+
+        assertThat(exitCode).isZero();
+        assertThat(Files.list(output).toList()).isNotEmpty();
     }
 
     private Path createRaster(String filename) throws Exception {

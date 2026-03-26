@@ -2,11 +2,12 @@ package ch.so.agi.terrainvis.pipeline;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 import ch.so.agi.terrainvis.config.CommonRunConfig;
 import ch.so.agi.terrainvis.config.OutputMode;
@@ -23,6 +24,7 @@ import ch.so.agi.terrainvis.rvt.RvtRunConfig;
 import ch.so.agi.terrainvis.tiling.TilePlan;
 import ch.so.agi.terrainvis.tiling.TilePlanner;
 import ch.so.agi.terrainvis.tiling.TileRequest;
+import ch.so.agi.terrainvis.util.BoundedCompletionExecutor;
 import ch.so.agi.terrainvis.util.ConsoleLogger;
 
 public final class RvtPipeline {
@@ -67,26 +69,25 @@ public final class RvtPipeline {
             ExecutorService executor = Executors.newFixedThreadPool(threads);
             try {
                 ExecutorCompletionService<RasterTileResult> completionService = new ExecutorCompletionService<>(executor);
-                int submitted = 0;
-                for (TileRequest tileRequest : tilePlan.tiles()) {
-                    if (tileRequest.id() < commonConfig.tilingConfig().startTile()) {
-                        continue;
-                    }
-                    submitted++;
-                    completionService.submit(() -> executeTile(rasterSource, metadata, tileRequest, runConfig));
-                }
-                for (int completed = 0; completed < submitted; completed++) {
-                    Future<RasterTileResult> future = completionService.take();
-                    RasterTileResult result = future.get();
-                    writer.write(result);
-                    logger.info(
-                            "Completed RVT tile %d/%d: tileId=%d status=%s validPixels=%d",
-                            completed + 1,
-                            submitted,
-                            result.tileRequest().id(),
-                            result.skipped() ? "skipped" : "processed",
-                            result.validPixelCount());
-                }
+                List<TileRequest> tilesToProcess = tilesToProcess(tilePlan, commonConfig.tilingConfig().startTile());
+                int submitted = tilesToProcess.size();
+                int[] completed = {0};
+                BoundedCompletionExecutor.process(
+                        completionService,
+                        tilesToProcess.iterator(),
+                        threads,
+                        (service, tileRequest) -> service.submit(() -> executeTile(rasterSource, metadata, tileRequest, runConfig)),
+                        result -> {
+                            writer.write(result);
+                            completed[0]++;
+                            logger.info(
+                                    "Completed RVT tile %d/%d: tileId=%d status=%s validPixels=%d",
+                                    completed[0],
+                                    submitted,
+                                    result.tileRequest().id(),
+                                    result.skipped() ? "skipped" : "processed",
+                                    result.validPixelCount());
+                        });
                 writer.finish();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -129,5 +130,15 @@ public final class RvtPipeline {
             return new SingleFileRasterAccumulator(runConfig, tilePlan, bandCount, metadata.noDataValue(), logger);
         }
         return new TiledRasterWriter(runConfig, metadata, logger);
+    }
+
+    private List<TileRequest> tilesToProcess(TilePlan tilePlan, int startTile) {
+        List<TileRequest> tilesToProcess = new ArrayList<>();
+        for (TileRequest tileRequest : tilePlan.tiles()) {
+            if (tileRequest.id() >= startTile) {
+                tilesToProcess.add(tileRequest);
+            }
+        }
+        return tilesToProcess;
     }
 }

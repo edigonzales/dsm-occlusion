@@ -11,7 +11,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 import org.geotools.referencing.CRS;
 import org.geotools.geometry.jts.ReferencedEnvelope;
@@ -28,6 +27,7 @@ import ch.so.agi.terrainvis.tiling.PixelWindow;
 import ch.so.agi.terrainvis.tiling.TilePlan;
 import ch.so.agi.terrainvis.tiling.TilePlanner;
 import ch.so.agi.terrainvis.tiling.TileRequest;
+import ch.so.agi.terrainvis.util.BoundedCompletionExecutor;
 import ch.so.agi.terrainvis.util.ConsoleLogger;
 
 public final class RenderPipeline {
@@ -75,26 +75,25 @@ public final class RenderPipeline {
                 ExecutorService executor = Executors.newFixedThreadPool(runConfig.tilingConfig().threads());
                 try {
                     ExecutorCompletionService<RasterTileResult> completionService = new ExecutorCompletionService<>(executor);
-                    int submitted = 0;
-                    for (TileRequest tileRequest : tilePlan.tiles()) {
-                        if (tileRequest.id() < runConfig.tilingConfig().startTile()) {
-                            continue;
-                        }
-                        submitted++;
-                        completionService.submit(() -> executeTile(tileRequest, preparedRender.layers(), runConfig.withAlpha()));
-                    }
-                    for (int completed = 0; completed < submitted; completed++) {
-                        Future<RasterTileResult> future = completionService.take();
-                        RasterTileResult result = future.get();
-                        writer.write(result);
-                        logger.info(
-                                "Completed render tile %d/%d: tileId=%d status=%s validPixels=%d",
-                                completed + 1,
-                                submitted,
-                                result.tileRequest().id(),
-                                result.skipped() ? "skipped" : "processed",
-                                result.validPixelCount());
-                    }
+                    List<TileRequest> tilesToProcess = tilesToProcess(tilePlan, runConfig.tilingConfig().startTile());
+                    int submitted = tilesToProcess.size();
+                    int[] completed = {0};
+                    BoundedCompletionExecutor.process(
+                            completionService,
+                            tilesToProcess.iterator(),
+                            runConfig.tilingConfig().threads(),
+                            (service, tileRequest) -> service.submit(() -> executeTile(tileRequest, preparedRender.layers(), runConfig.withAlpha())),
+                            result -> {
+                                writer.write(result);
+                                completed[0]++;
+                                logger.info(
+                                        "Completed render tile %d/%d: tileId=%d status=%s validPixels=%d",
+                                        completed[0],
+                                        submitted,
+                                        result.tileRequest().id(),
+                                        result.skipped() ? "skipped" : "processed",
+                                        result.validPixelCount());
+                            });
                     writer.finish();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -313,6 +312,16 @@ public final class RenderPipeline {
 
     private boolean same(double a, double b) {
         return Math.abs(a - b) <= EPSILON;
+    }
+
+    private List<TileRequest> tilesToProcess(TilePlan tilePlan, int startTile) {
+        List<TileRequest> tilesToProcess = new ArrayList<>();
+        for (TileRequest tileRequest : tilePlan.tiles()) {
+            if (tileRequest.id() >= startTile) {
+                tilesToProcess.add(tileRequest);
+            }
+        }
+        return tilesToProcess;
     }
 
     private record PreparedRender(RasterMetadata referenceMetadata, List<PreparedLayer> layers) {

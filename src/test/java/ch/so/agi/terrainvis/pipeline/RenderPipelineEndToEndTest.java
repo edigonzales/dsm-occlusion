@@ -215,6 +215,8 @@ class RenderPipelineEndToEndTest {
                 tiledDir.toString(),
                 "--tile-size",
                 "2",
+                "--threads",
+                "2",
                 "--with-alpha");
 
         assertThat(exitCode).isZero();

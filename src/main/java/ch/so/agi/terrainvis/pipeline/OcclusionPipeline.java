@@ -3,12 +3,13 @@ package ch.so.agi.terrainvis.pipeline;
 import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -25,6 +26,7 @@ import ch.so.agi.terrainvis.raster.RasterSource;
 import ch.so.agi.terrainvis.tiling.TilePlan;
 import ch.so.agi.terrainvis.tiling.TilePlanner;
 import ch.so.agi.terrainvis.tiling.TileRequest;
+import ch.so.agi.terrainvis.util.BoundedCompletionExecutor;
 import ch.so.agi.terrainvis.util.ConsoleLogger;
 import ch.so.agi.terrainvis.util.HeartbeatScheduler;
 import ch.so.agi.terrainvis.util.ScheduledHeartbeatScheduler;
@@ -110,59 +112,58 @@ public final class OcclusionPipeline {
             ExecutorService executor = Executors.newFixedThreadPool(executionLayout.tileWorkers());
             try {
                 ExecutorCompletionService<WorkerTileResult> completionService = new ExecutorCompletionService<>(executor);
+                List<TileRequest> tilesToProcess = tilesToProcess(tilePlan, runConfig.startTile());
                 logger.info(
                         "Submitting %d tile(s) to %d worker(s) with %d compute thread(s) per tile",
                         submitted,
                         executionLayout.tileWorkers(),
                         executionLayout.tileComputeThreads());
-                for (TileRequest tileRequest : tilePlan.tiles()) {
-                    if (tileRequest.id() < runConfig.startTile()) {
-                        continue;
-                    }
-                    logger.verbose(
-                            "Queued tile: tileId=%d row=%d col=%d core=%dx%d buffered=%dx%d",
-                            tileRequest.id(),
-                            tileRequest.tileRow(),
-                            tileRequest.tileColumn(),
-                            tileRequest.window().coreWindow().width(),
-                            tileRequest.window().coreWindow().height(),
-                            tileRequest.window().bufferedWindow().width(),
-                            tileRequest.window().bufferedWindow().height());
-                    completionService.submit(() -> executeTile(
-                            rasterSource,
-                            runConfig,
-                            metadata,
-                            tileRequest,
-                            executionLayout.tileComputeThreads(),
-                            inFlightCount));
-                }
+                BoundedCompletionExecutor.process(
+                        completionService,
+                        tilesToProcess.iterator(),
+                        executionLayout.tileWorkers(),
+                        (service, tileRequest) -> {
+                            logger.verbose(
+                                    "Queued tile: tileId=%d row=%d col=%d core=%dx%d buffered=%dx%d",
+                                    tileRequest.id(),
+                                    tileRequest.tileRow(),
+                                    tileRequest.tileColumn(),
+                                    tileRequest.window().coreWindow().width(),
+                                    tileRequest.window().coreWindow().height(),
+                                    tileRequest.window().bufferedWindow().width(),
+                                    tileRequest.window().bufferedWindow().height());
+                            service.submit(() -> executeTile(
+                                    rasterSource,
+                                    runConfig,
+                                    metadata,
+                                    tileRequest,
+                                    executionLayout.tileComputeThreads(),
+                                    inFlightCount));
+                        },
+                        workerResult -> {
+                            if (!workerResult.result().skipped()) {
+                                logger.verbose("Writing tile output: tileId=%d", workerResult.result().tileRequest().id());
+                            }
+                            long writeStartNanos = System.nanoTime();
+                            tileWriter.write(workerResult.result());
+                            long writeDurationNanos = System.nanoTime() - writeStartNanos;
 
-                for (int completed = 0; completed < submitted; completed++) {
-                    Future<WorkerTileResult> future = completionService.take();
-                    WorkerTileResult workerResult = future.get();
-                    if (!workerResult.result().skipped()) {
-                        logger.verbose("Writing tile output: tileId=%d", workerResult.result().tileRequest().id());
-                    }
-                    long writeStartNanos = System.nanoTime();
-                    tileWriter.write(workerResult.result());
-                    long writeDurationNanos = System.nanoTime() - writeStartNanos;
-
-                    int completedValue = completedCount.incrementAndGet();
-                    if (workerResult.result().skipped()) {
-                        skippedCount.incrementAndGet();
-                    }
-                    long totalTileDurationNanos = workerResult.workerDurationNanos() + writeDurationNanos;
-                    logger.info(
-                            "Completed tile %d/%d: tileId=%d row=%d col=%d status=%s validPixels=%d elapsed=%s",
-                            completedValue,
-                            submitted,
-                            workerResult.result().tileRequest().id(),
-                            workerResult.result().tileRequest().tileRow(),
-                            workerResult.result().tileRequest().tileColumn(),
-                            workerResult.result().skipped() ? "skipped" : "processed",
-                            workerResult.result().validPixelCount(),
-                            formatDuration(totalTileDurationNanos));
-                }
+                            int completedValue = completedCount.incrementAndGet();
+                            if (workerResult.result().skipped()) {
+                                skippedCount.incrementAndGet();
+                            }
+                            long totalTileDurationNanos = workerResult.workerDurationNanos() + writeDurationNanos;
+                            logger.info(
+                                    "Completed tile %d/%d: tileId=%d row=%d col=%d status=%s validPixels=%d elapsed=%s",
+                                    completedValue,
+                                    submitted,
+                                    workerResult.result().tileRequest().id(),
+                                    workerResult.result().tileRequest().tileRow(),
+                                    workerResult.result().tileRequest().tileColumn(),
+                                    workerResult.result().skipped() ? "skipped" : "processed",
+                                    workerResult.result().validPixelCount(),
+                                    formatDuration(totalTileDurationNanos));
+                        });
 
                 tileWriter.finish();
                 heartbeat.cancel();
@@ -243,6 +244,16 @@ public final class OcclusionPipeline {
             }
         }
         return submitted;
+    }
+
+    private List<TileRequest> tilesToProcess(TilePlan tilePlan, int startTile) {
+        List<TileRequest> tilesToProcess = new ArrayList<>();
+        for (TileRequest tileRequest : tilePlan.tiles()) {
+            if (tileRequest.id() >= startTile) {
+                tilesToProcess.add(tileRequest);
+            }
+        }
+        return tilesToProcess;
     }
 
     private int resolveEffectiveBufferPixelsX(RunConfig runConfig, RasterMetadata metadata) {
